@@ -2,6 +2,7 @@ using FileIO
 using Makie
 using VideoIO
 import Dates
+import MIDI
 
 Rot(theta) = [cos(theta) -sin(theta); sin(theta) cos(theta)]
 Stretch(length) = [length 0.0f0; 0.0f0 1.0f0]
