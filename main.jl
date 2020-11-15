@@ -3,6 +3,9 @@ using Makie
 using VideoIO
 import Dates
 
+Rot(theta) = [cos(theta) -sin(theta); sin(theta) cos(theta)]
+Stretch(length) = [length 0.0f0; 0.0f0 1.0f0]
+Scale(length) = [length 0.0f0; 0.0f0 length]
 pulse(t, length) = t < length && t > 0.0f0 ? 1 - (1/length * t) : 0
 range_mask(low, high) = val -> val > low && val < high ? 1.0f0 : 0.0f0
 
@@ -48,5 +51,17 @@ function video_renderer(name, frames, framerate)
     VideoIO.playvideo(f)
 end
 
-# events = [Dict("time" => x, "type" => "kick") for x=range(0.0f0,10.0f0, length=10)]
+function map_midi_to_events(midi_path)
+    midiFile = MIDI.readMIDIFile("test-midi.mid")
+    drum_track = midiFile.tracks[1]
+    notes = MIDI.getnotes(drum_track, midiFile.tpq)
+    seconds_per_tick = MIDI.ms_per_tick(midiFile) / 1000
+    drum_events = [
+        Dict("time" => float(x.position) * seconds_per_tick, "type" => "kick")
+        for x=notes.notes
+    ]
+    return drum_events
+end
+
+# events = [video_renderer("test-full", gridder(500, 1000, c, map_midi_to_events("test-midi.mid"), 60), 60)
 # video_renderer("$(abs(rand(Int)[1]))", gridder(500, 100, c, events, 10), 10)
