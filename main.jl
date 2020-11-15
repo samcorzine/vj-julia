@@ -1,6 +1,8 @@
 using FileIO
 using Makie
 using VideoIO
+using Colors
+using ProgressBars
 import Dates
 import MIDI
 
@@ -9,31 +11,45 @@ Stretch(length) = [length 0.0f0; 0.0f0 1.0f0]
 Scale(length) = [length 0.0f0; 0.0f0 length]
 pulse(t, length) = t < length && t > 0.0f0 ? 1 - (1/length * t) : 0
 range_mask(low, high) = val -> val > low && val < high ? 1.0f0 : 0.0f0
+cast_to(r, g, b) = val -> val == 1.0f0 ? RGB(r, g, b) : RGB(0, 0, 0)
 
-function c(x, y, t, kick_val)
-    transform = Stretch(0.5 * (kick_val + 1)) * Rot(t) * Scale(0.5)
+function circle(x, y, t, kick_val)
+    transform = Rot(pi/4 + t) * Scale(1 / (kick_val + 1))
+#     transform = Rot(0)
     trans_x, trans_y = transform * [x, y]
-    val = (trans_x * trans_x) + (trans_y * trans_y)
+    val = sin(((trans_x * trans_x) + sin(t)) + ((trans_y * trans_y) + sin(t)))
+    return val
+end
+
+function square(x, y, t, kick_val)
+    transform = Rot(pi/4 + t) * Scale(1 / (kick_val + 1) )
+    trans_x, trans_y = transform * [x, y]
+    val = abs(trans_x) + abs(trans_y) 
     return val
 end
 
 function gridder(frame_size, depth, val_func, events, framerate)
     framestack = []
-    kicks = [event["time"] for event in events]
-    println(kicks)
-    for t in 1:depth
+    kicks = [event["time"] for event in filter(e -> e["type"] == "kick", events)]
+    snares = [event["time"] for event in filter(e -> e["type"] == "snare", events)]
+    for t in ProgressBar(1:depth)
         curr_time = t/framerate
         past_kicks = filter(p -> p < curr_time, kicks)
         last_kick_time = length(past_kicks) > 0 ? maximum(past_kicks) : curr_time
-        kick_val = pulse(curr_time - last_kick_time, 1.0f0)
+        kick_val = pulse(curr_time - last_kick_time, 0.6f0)
+        past_snares = filter(p -> p < curr_time, snares)
+        snare_count = length(past_snares)
+        r, g, b = snare_count % 2 == 0 ? (1, 0, 0) : (0, 0, 1) 
         x = reshape(range(-10.0f0, 10.0f0, length = frame_size), (1, frame_size))
         y = reshape(range(-10.0f0, 10.0f0, length = frame_size), (frame_size, 1))
         out_vals = val_func.(x, y, curr_time, kick_val)
         masked = range_mask(0.0f0, 1.1f0).(out_vals)
-        push!(framestack, masked)
+        with_color = cast_to(r, g, b).(masked)
+        push!(framestack, with_color)
     end
     return framestack
 end
+
 
 
 function video_renderer(name, frames, framerate)
@@ -53,16 +69,20 @@ function video_renderer(name, frames, framerate)
 end
 
 function map_midi_to_events(midi_path)
-    midiFile = MIDI.readMIDIFile("test-midi.mid")
+    midiFile = MIDI.readMIDIFile(midi_path)
     drum_track = midiFile.tracks[1]
     notes = MIDI.getnotes(drum_track, midiFile.tpq)
     seconds_per_tick = MIDI.ms_per_tick(midiFile) / 1000
-    drum_events = [
+    kick_events = [
         Dict("time" => float(x.position) * seconds_per_tick, "type" => "kick")
-        for x=notes.notes
+        for x=filter(note -> note.pitch == 0x24, notes.notes)
     ]
-    return drum_events
+    snare_events = [
+        Dict("time" => float(x.position) * seconds_per_tick, "type" => "snare")
+        for x=filter(note -> note.pitch == 0x25, notes.notes)
+    ]    
+    return vcat(kick_events, snare_events)
 end
 
-# events = [video_renderer("test-full", gridder(500, 1000, c, map_midi_to_events("test-midi.mid"), 60), 60)
-# video_renderer("$(abs(rand(Int)[1]))", gridder(500, 100, c, events, 10), 10)
+framerate = 20
+video_renderer("test-full", gridder(500, 1000, circle, map_midi_to_events("test-midi-2.mid"), framerate), framerate)
